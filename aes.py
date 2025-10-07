@@ -1,139 +1,380 @@
-import time
+# -*- coding: utf-8 -*-
+from gf import G_F
 
-class G_F:
+class AES:
     """
-    Genera un cuerpo finito usando como polinomio irreducible el dado
-    representado como un entero. Por defecto toma el polinomio del AES.
-    Los elementos del cuerpo los representaremos por enteros 0<= n <= 255.
+    Documento de referencia:
+    Federal Information Processing Standards Publication (FIPS) 197: Advanced Encryption
+    Standard (AES) https://doi.org/10.6028/NIST.FIPS.197-upd1
+    El nombre de los métodos, tablas, etc son los mismos (salvo capitalización)
+    que los empleados en el FIPS 197
     """
+    def __init__(self, key, Polinomio_Irreducible = 0x11B):
+        """
+        Entrada:
+            key: bytearray de 16 24 o 32 bytes
+            Polinomio_Irreducible: Entero que representa el polinomio para construir el cuerpo
+        SBox: equivalente a la tabla 4, pág. 14
+        InvSBOX: equivalente a la tabla 6, pág. 23
+        Rcon: equivalente a la tabla 5, pág. 17
+        InvMixMatrix : equivalente a la matriz usada en 5.3.3, pág. 24
+        """
 
-    def __init__(self, Polinomio_Irreducible = 0x11B):
-        """
-        Entrada: un entero que representa el polinomio para construir el cuerpo
-        Tabla_EXP y Tabla_LOG dos tablas, la primera tal que en la posicion
-        i-esima tenga valor a=g**i y la segunda tal que en la posicion a-esima
-        tenga el valor i tal que a=g**i. (g generador del cuerpo finito
-        representado por el menor entero entre 0 y 255.)
-        """
+        if not isinstance(key, (bytes, bytearray)):
+            raise TypeError("key debe ser bytes o bytearray")
+        if len(key) not in (16, 24, 32):
+            raise ValueError("key debe tener 16, 24 o 32 bytes")
+
+        self.key = bytearray(key)
+        self.Nb = 4
+        self.Nk = len(self.key) // 4
+        self.Nr = {4:10, 6:12, 8:14}[self.Nk]
+
         self.Polinomio_Irreducible = Polinomio_Irreducible
-        self.g = self.get_generador()
-        self.get_tablas()
 
-    def get_generador(self):
-        #Optimizacion con factores primos (255 = 3 * 5 * 17)
-        factores_primos = [3, 5, 17]
-        for g in range(2, 256):
-            es_generador = True
-            for p in factores_primos:
-                if self.potencia(g, 255 // p) == 1:
-                    es_generador = False
-                    break
-            if es_generador:
-                return g
+        self._gf = G_F(self.Polinomio_Irreducible)
+
+        self.SBox = self._build_sbox()
+        self.InvSBox = self._build_invsbox(self.SBox)
+        self.Rcon = self._build_rcon(self.Nr)
+        self.InvMixMatrix = None
+
+
+
+    def _build_sbox(self):
+        """SBox: inverso en GF(2^8) + transformación afín con c=0x63."""
+        s = [0]*256
+        for x in range(256):
+            inv = self._gf.inverso(x) if x != 0 else 0  # inverso multiplicativo (0 -> 0)
+            s[x] = self._affine(inv)
+        return s
+
+    def _build_invsbox(self, sbox):
+        inv = [0]*256
+        for a in range(256):
+            inv[sbox[a]] = a
+        return inv
+
+    def _build_rcon(self, rounds):
+        """
+        Rcon[i] = (02)^(i-1) en GF(2^8), con Rcon[1]=0x01 (Rcon[0] no se usa).
+        Generamos hasta 'rounds' (Nr).
+        """
+        r = [0x00]*(rounds+1)
+        r[1] = 0x01
+        for i in range(2, rounds+1):
+            r[i] = self._gf.xTimes(r[i-1])
+        return r
+
+    @staticmethod
+    def _rotl8(x, s):
+        return ((x << s) | (x >> (8 - s))) & 0xFF
+
+    def _affine(self, b):
+        """
+        Transformación afín AES (bit a bit):
+        s = b ^ rotl(b,1) ^ rotl(b,2) ^ rotl(b,3) ^ rotl(b,4) ^ 0x63
+        """
+        t = b ^ self._rotl8(b,1) ^ self._rotl8(b,2) ^ self._rotl8(b,3) ^ self._rotl8(b,4)
+        return (t ^ 0x63) & 0xFF
+
+
+
+
+
+    def SubBytes(self, State):
+        """
+        5.1.1 SUBBYTES()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+        return bytearray(self.SBox[b] for b in State)
+
+    def InvSubBytes(self, State):
+        """
+        5.3.2 INVSUBBYTES()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+        return bytearray(self.InvSBox[b] for b in State)
+
+    def ShiftRows(self, State):
+        """
+        5.1.2 SHIFTROWS()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+
+        s = list(State)
+        s[1], s[5], s[9], s[13] = s[5], s[9], s[13], s[1]
+        s[2], s[6], s[10], s[14] = s[10], s[14], s[2], s[6]
+        s[3], s[7], s[11], s[15] = s[15], s[3], s[7], s[11]
+        return bytearray(s)
+
+    def InvShiftRows(self, State):
+        """
+        5.3.1 INVSHIFTROWS()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+
+        s = list(State)
+        s[1], s[5], s[9], s[13] = s[13], s[1], s[5], s[9]
+        s[2], s[6], s[10], s[14] = s[10], s[14], s[2], s[6]
+        s[3], s[7], s[11], s[15] = s[7], s[11], s[15], s[3]
+        return bytearray(s)
+
+    def MixColumns(self, State):
+        """
+        5.1.3 MIXCOLUMNS()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+
+        s = list(State)
+        gf = self._gf
+
+        for c in range(4):
+            i = 4 * c
+            a0, a1, a2, a3 = s[i:i+4]
+
+            s[i+0] = gf.producto(0x02, a0) ^ gf.producto(0x03, a1) ^ a2 ^ a3
+            s[i+1] = a0 ^ gf.producto(0x02, a1) ^ gf.producto(0x03, a2) ^ a3
+            s[i+2] = a0 ^ a1 ^ gf.producto(0x02, a2) ^ gf.producto(0x03, a3)
+            s[i+3] = gf.producto(0x03, a0) ^ a1 ^ a2 ^ gf.producto(0x02, a3)
+
+        return bytearray(s)
+
+    def InvMixColumns(self, State):
+        """
+        5.3.3 INVMIXCOLUMNS()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+
+        s = list(State)
+        gf = self._gf
+
+        for c in range(4):
+            i = 4 * c
+            a0, a1, a2, a3 = s[i:i+4]
+
+            s[i+0] = (gf.producto(0x0E, a0) ^
+                      gf.producto(0x0B, a1) ^
+                      gf.producto(0x0D, a2) ^
+                      gf.producto(0x09, a3))
+            s[i+1] = (gf.producto(0x09, a0) ^
+                      gf.producto(0x0E, a1) ^
+                      gf.producto(0x0B, a2) ^
+                      gf.producto(0x0D, a3))
+            s[i+2] = (gf.producto(0x0D, a0) ^
+                      gf.producto(0x09, a1) ^
+                      gf.producto(0x0E, a2) ^
+                      gf.producto(0x0B, a3))
+            s[i+3] = (gf.producto(0x0B, a0) ^
+                      gf.producto(0x0D, a1) ^
+                      gf.producto(0x09, a2) ^
+                      gf.producto(0x0E, a3))
+
+        return bytearray(s)
+
+    def AddRoundKey(self, State, roundKey):
+        """
+        5.1.4 ADDROUNDKEY()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not (isinstance(State, (bytes, bytearray)) and len(State) == 16):
+            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+        if not (isinstance(roundKey, (bytes, bytearray)) and len(roundKey) == 16):
+            raise ValueError("roundKey debe ser bytes/bytearray de 16 bytes")
+
+        return bytearray([State[i] ^ roundKey[i] for i in range(16)])
+
+    def KeyExpansion(self, key):
+        """
+        5.2 KEYEXPANSION()
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(key, (bytes, bytearray)):
+            raise TypeError("key debe ser bytes o bytearray")
+        if len(key) not in (16, 24, 32):
+            raise ValueError("key debe tener 16, 24 o 32 bytes")
+
+        Nk = len(key) // 4
+        Nr = {4:10, 6:12, 8:14}[Nk]
+        Nb = 4
+
+        W = [list(key[4*i:4*(i+1)]) for i in range(Nk)]
+
+        def RotWord(word):
+            return word[1:] + word[:1]
+
+        def SubWord(word):
+            return [self.SBox[b] for b in word]
+
+        for i in range(Nk, Nb*(Nr+1)):
+            temp = W[i-1].copy()
+            if i % Nk == 0:
+                temp = SubWord(RotWord(temp))
+                temp[0] ^= self.Rcon[i//Nk]
+            elif Nk > 6 and i % Nk == 4:
+                temp = SubWord(temp)
+            W.append([W[i-Nk][j] ^ temp[j] for j in range(4)])
+
+        expanded_key = bytearray(sum(W, []))
+        return expanded_key
+
+    def Cipher(self, State, Nr, Expanded_KEY):
+        """
+        5.1 Cipher(), Algorithm 1 pág. 12
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe tener 16 bytes")
+
+        Nb = 4
+        RoundKeys = [Expanded_KEY[16*i:16*(i+1)] for i in range(Nr+1)]
+
+        State = self.AddRoundKey(State, RoundKeys[0])
+
+        for rnd in range(1, Nr):
+            State = self.SubBytes(State)
+            State = self.ShiftRows(State)
+            State = self.MixColumns(State)
+            State = self.AddRoundKey(State, RoundKeys[rnd])
+
+        State = self.SubBytes(State)
+        State = self.ShiftRows(State)
+        State = self.AddRoundKey(State, RoundKeys[Nr])
+
+        return State
+
+    def InvCipher(self, State, Nr, Expanded_KEY):
+        """
+        5. InvCipher()
+        Algorithm 3 pág. 20 o Algorithm 4 pág. 25. Son equivalentes
+        FIPS 197: Advanced Encryption Standard (AES)
+        """
+
+        if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
+            raise ValueError("State debe tener 16 bytes")
+
+        Nb = 4
+        RoundKeys = [Expanded_KEY[16*i:16*(i+1)] for i in range(Nr+1)]
+
+        State = self.AddRoundKey(State, RoundKeys[Nr])
+
+        for rnd in range(Nr-1, 0, -1):
+            State = self.InvShiftRows(State)
+            State = self.InvSubBytes(State)
+            State = self.AddRoundKey(State, RoundKeys[rnd])
+            State = self.InvMixColumns(State)
+
+        State = self.InvShiftRows(State)
+        State = self.InvSubBytes(State)
+        State = self.AddRoundKey(State, RoundKeys[0])
+
+        return State
     
-    #Se puede optimizar mas
-    def potencia(self, base, exp):
-        resultado = 1
-        for i in range(exp):
-            resultado = self.productoPolinomio(resultado, base)
-        return resultado
-
-    def get_tablas(self):
-        self.Tabla_EXP = [0] * 255  # Inicializamos con 255 posiciones
-        self.Tabla_LOG = [-1] * 256  # 256 posiciones, -1 para 0 o no definido
-        valor = 1  # g^0 = 1
-        self.Tabla_EXP[0] = valor
-        self.Tabla_LOG[valor] = 0
-        
-
-        for i in range(1, 255):
-            valor = self.xTimes(valor) if self.g == 2 else self.productoPolinomio(valor, self.g)
-            self.Tabla_EXP[i] = valor
-            self.Tabla_LOG[valor] = i
-        
-    
-    def xTimes(self, n):
+    def encrypt_file(self, fichero):
         """
-        Entrada: un elemento del cuerpo representado por un entero entre 0 y 255
-        Salida: un elemento del cuerpo representado por un entero entre 0 y 255
-        que es el producto en el cuerpo de 'n' y 0x02 (el polinomio X).
+        Entrada: Nombre del fichero a cifrar
+        Salida: Fichero cifrado usando la clave utilizada en el constructor de la clase.
+            Para cifrar se usará el modo CBC, con IV correspondiente a los 16
+            primeros bytes obtenidos al aplicar el sha256 a la concatenación
+            de "IV" y la clave usada para cifrar. Por ejemplo:
+                Key 0x0aba289662caa5caaa0d073bd0b575f4
+                     IV asociado 0xeb53bf26511a8c0b67657ccfec7a25ee
+                Key 0x46abd80bdcf88518b2bec4b7f9dee187b8c90450696d2b995f26cdf2fe058610
+                    IV asociado 0x4fe68dfd67d8d269db4ad2ebac646986
+            El padding usado será PKCS7.
+            El nombre de fichero cifrado será el obtenido al añadir el sufijo .enc
+            al nombre del fichero a cifrar: NombreFichero --> NombreFichero.enc
         """
-        bit7 = n & 0x80
-        n <<= 1 #Multiplicar por x(2)
-        if bit7: 
-            n ^= self.Polinomio_Irreducible #Si hay mas de 8 bits reducir modulo del polinomio
-        return n & 0xFF
-        
 
-    def productoPolinomio(self, a, b):
+        import hashlib
+        from hashlib import sha256
+
+        IV = bytearray(sha256(b"IV" + bytes(self.key)).digest()[:16])
+
+        with open(fichero, "rb") as f:
+            data = f.read()
+
+        pad_len = 16 - (len(data) % 16)
+        data += bytes([pad_len]) * pad_len
+
+        expanded = self.KeyExpansion(self.key)
+
+        prev = IV
+        out = bytearray()
+        for i in range(0, len(data), 16):
+            block = bytearray(data[i:i+16])
+            for j in range(16):
+                block[j] ^= prev[j]
+            cipher_block = self.Cipher(block, self.Nr, expanded)
+            out.extend(cipher_block)
+            prev = cipher_block
+
+        out_name = fichero + ".enc"
+        with open(out_name, "wb") as f:
+            f.write(out)
+
+        return out_name
+
+
+    def decrypt_file(self, fichero):
         """
-        Entrada: dos elementos del cuerpo representados por enteros entre 0 y 255
-        Salida: un elemento del cuerpo representado por un entero entre 0 y 255
-        que es el producto en el cuerpo de la entrada.
-        Atencion: Se valorara la eficiencia. No es lo mismo calcularlo
-        usando la definicion en terminos de polinomios o calcular
-        usando las tablas Tabla_EXP y Tabla_LOG.
+        Entrada: Nombre del fichero a descifrar
+        Salida: Fichero descifrado usando la clave utilizada en el constructor de la clase.
+            Para descifrar se usará el modo CBC, con el IV usado para cifrar.
+            El nombre de fichero descifrado será el obtenido al añadir el sufijo .dec
+            al nombre del fichero a descifrar: NombreFichero --> NombreFichero.dec
         """
-        # Version polinomios
-        if a == 0 or b == 0:
-            return 0
-        
-        res = 0
-        for i in range(8):
-            if b & 1:
-                res ^= a #Sumar al resultado
-            a = self.xTimes(a) #Multiplcar a * x
-            b >>= 1 #Mirar siguiente bit
-        return res
-    
-    def producto(self, a, b):
-        if a == 0 or b == 0:
-            return 0
-        res = (self.Tabla_LOG[a] + self.Tabla_LOG[b]) % 255
-        return self.Tabla_EXP[res]
 
-    def inverso(self, n):
-        """
-        Entrada: un elementos del cuerpo representado por un entero entre 0 y 255
-        Salida: 0 si la entrada es 0,
-        el inverso multiplicativo de n representado por un entero entre
-        1 y 255 si n <> 0.
-        Atencion: Se valorara la eficiencia.
-        """
-        if n == 0:
-            return 0
-        res = (255 - self.Tabla_LOG[n]) % 255
-        return self.Tabla_EXP[res]
+        from hashlib import sha256
 
-    def mostrar_info(self):
-            print("=" * 50)
-            print("🔹 Información del cuerpo finito GF(2^8)")
-            print("=" * 50)
-            print(f"Polinomio irreducible: {self.Polinomio_Irreducible:#04x} ({self.Polinomio_Irreducible})")
-            print(f"Forma binaria: {self.Polinomio_Irreducible:#011b}")
-            print(f"Generador encontrado: g = {self.g:#04x} ({self.g})")
-            print("-" * 50)
+        with open(fichero, "rb") as f:
+            C = f.read()
 
-            print("🔸 Tabla EXP (g^i):")
-            for i in range(0, 255, 16):
-                fila = self.Tabla_EXP[i:i+16]
-                print(" ".join(f"{x:02X}" for x in fila))
-            print("-" * 50)
+        if len(C) == 0 or len(C) % 16 != 0:
+            raise ValueError("Fichero cifrado inválido (longitud no múltiplo de 16)")
 
-            print("🔸 Tabla LOG (log_g(a)):")
-            for i in range(0, 256, 16):
-                fila = self.Tabla_LOG[i:i+16]
-                print(" ".join(f"{x:3}" for x in fila))
-            print("=" * 50)
+        IV = bytearray(sha256(b"IV" + bytes(self.key)).digest()[:16])
 
+        expanded = self.KeyExpansion(self.key)
 
-if __name__ == "__main__":
-    inicio = time.time()
-    gf = G_F(0x11B)
-    fin = time.time()
-    gf.mostrar_info()
-  
-    print(f"Producto polinómico 0x57 * 0x83 = {gf.productoPolinomio(0x57, 0x83):02X}")
-    print(f"Producto con tablas  0x57 * 0x83 = {gf.producto(0x57, 0x83):02X}")
-    print(f"Inverso de 0x57 = {gf.inverso(0x57):02X}")
-    print(f"Tiempo de ejecución: {fin - inicio:.6f} segundos")
+        prev = IV
+        P = bytearray()
+        for i in range(0, len(C), 16):
+            Ci = bytearray(C[i:i+16])
+            Pi = self.InvCipher(Ci, self.Nr, expanded)
+            for j in range(16):
+                Pi[j] ^= prev[j]
+            P.extend(Pi)
+            prev = Ci
+
+        pad = P[-1]
+        if pad < 1 or pad > 16 or any(b != pad for b in P[-pad:]):
+            raise ValueError("Padding PKCS7 inválido")
+        P = P[:-pad]
+
+        out_name = fichero + ".dec"
+        with open(out_name, "wb") as f:
+            f.write(P)
+
+        return out_name
