@@ -27,7 +27,9 @@ class AES:
 
         self.key = bytearray(key)
         self.Nb = 4
-        self.Nk = len(self.key) // 4
+        # key length
+        self.Nk = len(self.key)
+        # number of rounds
         self.Nr = {4:10, 6:12, 8:14}[self.Nk]
 
         self.Polinomio_Irreducible = Polinomio_Irreducible
@@ -39,27 +41,33 @@ class AES:
         self.Rcon = self._build_rcon(self.Nr)
         self.InvMixMatrix = None
 
-
-
     def _build_sbox(self):
-        """SBox: inverso en GF(2^8) + transformación afín con c=0x63."""
+        
         s = [0]*256
         for x in range(256):
-            inv = self._gf.inverso(x) if x != 0 else 0  # inverso multiplicativo (0 -> 0)
+            # finds the multiplicative invers in GF
+            inv = self._gf.inverso(x) if x != 0 else 0
+            # affine transformation
             s[x] = self._affine(inv)
         return s
+    
+    def _affine(self, b):
+
+        # bi′​=bi​⊕b(i+4)​⊕b(i+5)​⊕b(i+6)​⊕b(i+7)​⊕ci with c=0x63
+        t = b ^ self._rotl8(b,1) ^ self._rotl8(b,2) ^ self._rotl8(b,3) ^ self._rotl8(b,4)
+        return (t ^ 0x63) & 0xFF
 
     def _build_invsbox(self, sbox):
+
+        # equivalent to applying the inverse affine transformation and multiplicative inversion in GF(2⁸)
         inv = [0]*256
         for a in range(256):
             inv[sbox[a]] = a
         return inv
 
     def _build_rcon(self, rounds):
-        """
-        Rcon[i] = (02)^(i-1) en GF(2^8), con Rcon[1]=0x01 (Rcon[0] no se usa).
-        Generamos hasta 'rounds' (Nr).
-        """
+
+        # Rcon[i] = [x^(i−1), {00}, {00}, {00}], where x^(i−1) is computed in GF(2⁸)
         r = [0x00]*(rounds+1)
         r[1] = 0x01
         for i in range(2, rounds+1):
@@ -68,19 +76,9 @@ class AES:
 
     @staticmethod
     def _rotl8(x, s):
+
+        # circular rotation to the left, keeping only the lower 8 bits
         return ((x << s) | (x >> (8 - s))) & 0xFF
-
-    def _affine(self, b):
-        """
-        Transformación afín AES (bit a bit):
-        s = b ^ rotl(b,1) ^ rotl(b,2) ^ rotl(b,3) ^ rotl(b,4) ^ 0x63
-        """
-        t = b ^ self._rotl8(b,1) ^ self._rotl8(b,2) ^ self._rotl8(b,3) ^ self._rotl8(b,4)
-        return (t ^ 0x63) & 0xFF
-
-
-
-
 
     def SubBytes(self, State):
         """
@@ -89,7 +87,9 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("State must be a bytes/bytearray of 16 bytes")
+        
+        # every b in State is replaced with Sbox[b]
         return bytearray(self.SBox[b] for b in State)
 
     def InvSubBytes(self, State):
@@ -99,7 +99,9 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("State must be a bytes/bytearray of 16 bytes")
+        
+        # every b in State is replaced with InvSbox[b]
         return bytearray(self.InvSBox[b] for b in State)
 
     def ShiftRows(self, State):
@@ -109,11 +111,14 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("State must be a bytes/bytearray of 16 bytes")
 
         s = list(State)
+        # shifts row 1 - 1 byte to the left
         s[1], s[5], s[9], s[13] = s[5], s[9], s[13], s[1]
+        # shifts row 2 - 2 bytes to the left
         s[2], s[6], s[10], s[14] = s[10], s[14], s[2], s[6]
+        # shifts row 3 - 3 bytes to the left
         s[3], s[7], s[11], s[15] = s[15], s[3], s[7], s[11]
         return bytearray(s)
 
@@ -124,11 +129,14 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("State must be a bytes/bytearray of 16 bytes")
 
         s = list(State)
+        # shifts row 1 - 1 byte to the right
         s[1], s[5], s[9], s[13] = s[13], s[1], s[5], s[9]
+        # shifts row 2 - 2 bytes to the right
         s[2], s[6], s[10], s[14] = s[10], s[14], s[2], s[6]
+        # shifts row 3 - 3 bytes to the right
         s[3], s[7], s[11], s[15] = s[7], s[11], s[15], s[3]
         return bytearray(s)
 
@@ -139,7 +147,7 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("State must be a bytes/bytearray of 16 bytes")
 
         s = list(State)
         gf = self._gf
@@ -148,9 +156,13 @@ class AES:
             i = 4 * c
             a0, a1, a2, a3 = s[i:i+4]
 
+            # first row = 2*a0 ⊕ 3*a1 ⊕ 1*a2 ⊕ 1*a3
             s[i+0] = gf.producto(0x02, a0) ^ gf.producto(0x03, a1) ^ a2 ^ a3
+            # second row = 1*a0 ⊕ 2*a1 ⊕ 3*a2 ⊕ 1*a3
             s[i+1] = a0 ^ gf.producto(0x02, a1) ^ gf.producto(0x03, a2) ^ a3
+            # third row = 1*a0 ⊕ 1*a1 ⊕ 2*a2 ⊕ 3*a3
             s[i+2] = a0 ^ a1 ^ gf.producto(0x02, a2) ^ gf.producto(0x03, a3)
+            # forth row = 3*a0 ⊕ 1*a1 ⊕ 1*a2 ⊕ 2*a3
             s[i+3] = gf.producto(0x03, a0) ^ a1 ^ a2 ^ gf.producto(0x02, a3)
 
         return bytearray(s)
@@ -162,7 +174,7 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("State must be a bytes/bytearray of 16 bytes")
 
         s = list(State)
         gf = self._gf
@@ -171,18 +183,22 @@ class AES:
             i = 4 * c
             a0, a1, a2, a3 = s[i:i+4]
 
+            # first row = 0E*a0 ⊕ 0B*a1 ⊕ 0D*a2 ⊕ 09*a3
             s[i+0] = (gf.producto(0x0E, a0) ^
                       gf.producto(0x0B, a1) ^
                       gf.producto(0x0D, a2) ^
                       gf.producto(0x09, a3))
+            # second row = 09*a0 ⊕ 0E*a1 ⊕ 0B*a2 ⊕ 0D*a3
             s[i+1] = (gf.producto(0x09, a0) ^
                       gf.producto(0x0E, a1) ^
                       gf.producto(0x0B, a2) ^
                       gf.producto(0x0D, a3))
+            # third row = 0D*a0 ⊕ 09*a1 ⊕ 0E*a2 ⊕ 0B*a3
             s[i+2] = (gf.producto(0x0D, a0) ^
                       gf.producto(0x09, a1) ^
                       gf.producto(0x0E, a2) ^
                       gf.producto(0x0B, a3))
+            # forth row = 0B*a0 ⊕ 0D*a1 ⊕ 09*a2 ⊕ 0E*a3
             s[i+3] = (gf.producto(0x0B, a0) ^
                       gf.producto(0x0D, a1) ^
                       gf.producto(0x09, a2) ^
@@ -197,10 +213,12 @@ class AES:
         """
 
         if not (isinstance(State, (bytes, bytearray)) and len(State) == 16):
-            raise ValueError("State debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("State must be a bytes/bytearray of 16 bytes")
+        
         if not (isinstance(roundKey, (bytes, bytearray)) and len(roundKey) == 16):
-            raise ValueError("roundKey debe ser bytes/bytearray de 16 bytes")
+            raise ValueError("roundKey must be a bytes/bytearray of 16 bytes")
 
+        # XOR element by element between State and roundKey
         return bytearray([State[i] ^ roundKey[i] for i in range(16)])
 
     def KeyExpansion(self, key):
@@ -210,9 +228,10 @@ class AES:
         """
 
         if not isinstance(key, (bytes, bytearray)):
-            raise TypeError("key debe ser bytes o bytearray")
+            raise TypeError("key must be bytes or bytearray")
+        
         if len(key) not in (16, 24, 32):
-            raise ValueError("key debe tener 16, 24 o 32 bytes")
+            raise ValueError("key must be 16, 24 or 32 bytes")
 
         Nk = len(key) // 4
         Nr = {4:10, 6:12, 8:14}[Nk]
@@ -220,9 +239,11 @@ class AES:
 
         W = [list(key[4*i:4*(i+1)]) for i in range(Nk)]
 
+        # returns [a₁, a₂, a₃, a₀]
         def RotWord(word):
             return word[1:] + word[:1]
 
+        # returns [SBOX(a₀), SBOX(a₁), SBOX(a₂), SBOX(a₃)]
         def SubWord(word):
             return [self.SBox[b] for b in word]
 
@@ -233,6 +254,8 @@ class AES:
                 temp[0] ^= self.Rcon[i//Nk]
             elif Nk > 6 and i % Nk == 4:
                 temp = SubWord(temp)
+
+            # w[i] = w[i−Nk] xor temp
             W.append([W[i-Nk][j] ^ temp[j] for j in range(4)])
 
         expanded_key = bytearray(sum(W, []))
@@ -245,19 +268,21 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe tener 16 bytes")
+            raise ValueError("State must be 16 bytes")
 
-        Nb = 4
+        # w[4*i .. 4*i+3]
         RoundKeys = [Expanded_KEY[16*i:16*(i+1)] for i in range(Nr+1)]
 
         State = self.AddRoundKey(State, RoundKeys[0])
 
+        # round 1 to Nr-1
         for rnd in range(1, Nr):
             State = self.SubBytes(State)
             State = self.ShiftRows(State)
             State = self.MixColumns(State)
             State = self.AddRoundKey(State, RoundKeys[rnd])
 
+        # last round without MixColumns
         State = self.SubBytes(State)
         State = self.ShiftRows(State)
         State = self.AddRoundKey(State, RoundKeys[Nr])
@@ -272,19 +297,21 @@ class AES:
         """
 
         if not isinstance(State, (bytes, bytearray)) or len(State) != 16:
-            raise ValueError("State debe tener 16 bytes")
+            raise ValueError("State must be 16 bytes")
 
-        Nb = 4
+        # w[4*Nr .. 4*Nr+3]
         RoundKeys = [Expanded_KEY[16*i:16*(i+1)] for i in range(Nr+1)]
 
         State = self.AddRoundKey(State, RoundKeys[Nr])
 
+        # round Nr-1 down to 1
         for rnd in range(Nr-1, 0, -1):
             State = self.InvShiftRows(State)
             State = self.InvSubBytes(State)
             State = self.AddRoundKey(State, RoundKeys[rnd])
             State = self.InvMixColumns(State)
 
+        # last round without InvMixColumns
         State = self.InvShiftRows(State)
         State = self.InvSubBytes(State)
         State = self.AddRoundKey(State, RoundKeys[0])
@@ -370,7 +397,7 @@ class AES:
 
         pad = P[-1]
         if pad < 1 or pad > 16 or any(b != pad for b in P[-pad:]):
-            raise ValueError("Padding PKCS7 inválido")
+            raise ValueError("Padding PKCS7 invalid")
         P = P[:-pad]
 
         out_name = fichero + ".dec"
