@@ -28,7 +28,7 @@ class AES:
         self.key = bytearray(key)
         self.Nb = 4
         # key length
-        self.Nk = len(self.key)
+        self.Nk = len(self.key) // 4
         # number of rounds
         self.Nr = {4:10, 6:12, 8:14}[self.Nk]
 
