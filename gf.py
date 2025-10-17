@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-import time
-
 class G_F:
     """
     Genera un cuerpo finito usando como polinomio irreducible el dado
@@ -32,7 +30,6 @@ class G_F:
             if es_generador:
                 return g
 
-    #Se puede optimizar mas
     def potencia(self, base, exp):
         resultado = 1
         for i in range(exp):
@@ -43,14 +40,11 @@ class G_F:
         self.Tabla_EXP = [0] * 255  # Inicializamos con 255 posiciones
         self.Tabla_LOG = [-1] * 256  # 256 posiciones, -1 para 0 o no definido
         valor = 1  # g^0 = 1
-        self.Tabla_EXP[0] = valor
-        self.Tabla_LOG[valor] = 0
-        
-
-        for i in range(1, 255):
-            valor = self.xTimes(valor) if self.g == 2 else self.productoPolinomio(valor, self.g)
+        for i in range(255):
             self.Tabla_EXP[i] = valor
             self.Tabla_LOG[valor] = i
+            valor = self.productoPolinomio(valor, self.g)
+
         
     
     def xTimes(self, n):
@@ -75,7 +69,6 @@ class G_F:
         usando la definicion en terminos de polinomios o calcular
         usando las tablas Tabla_EXP y Tabla_LOG.
         """
-        # Version polinomios
         if a == 0 or b == 0:
             return 0
         
@@ -105,36 +98,3 @@ class G_F:
             return 0
         res = (255 - self.Tabla_LOG[n]) % 255
         return self.Tabla_EXP[res]
-
-    def mostrar_info(self):
-            print("=" * 50)
-            print("🔹 Información del cuerpo finito GF(2^8)")
-            print("=" * 50)
-            print(f"Polinomio irreducible: {self.Polinomio_Irreducible:#04x} ({self.Polinomio_Irreducible})")
-            print(f"Forma binaria: {self.Polinomio_Irreducible:#011b}")
-            print(f"Generador encontrado: g = {self.g:#04x} ({self.g})")
-            print("-" * 50)
-
-            print("🔸 Tabla EXP (g^i):")
-            for i in range(0, 255, 16):
-                fila = self.Tabla_EXP[i:i+16]
-                print(" ".join(f"{x:02X}" for x in fila))
-            print("-" * 50)
-
-            print("🔸 Tabla LOG (log_g(a)):")
-            for i in range(0, 256, 16):
-                fila = self.Tabla_LOG[i:i+16]
-                print(" ".join(f"{x:3}" for x in fila))
-            print("=" * 50)
-
-
-if __name__ == "__main__":
-    inicio = time.time()
-    gf = G_F(0x11B)
-    fin = time.time()
-    gf.mostrar_info()
-  
-    print(f"Producto polinómico 0x57 * 0x83 = {gf.productoPolinomio(0x57, 0x83):02X}")
-    print(f"Producto con tablas  0x57 * 0x83 = {gf.producto(0x57, 0x83):02X}")
-    print(f"Inverso de 0x57 = {gf.inverso(0x57):02X}")
-    print(f"Tiempo de ejecución: {fin - inicio:.6f} segundos")

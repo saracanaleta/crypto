@@ -337,8 +337,10 @@ class AES:
         import hashlib
         from hashlib import sha256
 
+        # Generar IV a partir de la key
         IV = bytearray(sha256(b"IV" + bytes(self.key)).digest()[:16])
 
+        #Leer fichero
         with open(fichero, "rb") as f:
             data = f.read()
 
@@ -348,18 +350,18 @@ class AES:
         expanded = self.KeyExpansion(self.key)
 
         prev = IV
-        out = bytearray()
+        output = bytearray()
         for i in range(0, len(data), 16):
             block = bytearray(data[i:i+16])
             for j in range(16):
-                block[j] ^= prev[j]
-            cipher_block = self.Cipher(block, self.Nr, expanded)
-            out.extend(cipher_block)
+                block[j] ^= prev[j]  # XOR con el bloque anterior
+            cipher_block = self.Cipher(block, self.Nr, expanded) #Cifrar
+            output.extend(cipher_block)
             prev = cipher_block
 
         out_name = fichero + ".enc"
         with open(out_name, "wb") as f:
-            f.write(out)
+            f.write(output)
 
         return out_name
 
@@ -378,6 +380,7 @@ class AES:
         with open(fichero, "rb") as f:
             C = f.read()
 
+        # Mirar longitud valida
         if len(C) == 0 or len(C) % 16 != 0:
             raise ValueError("Fichero cifrado inválido (longitud no múltiplo de 16)")
 
@@ -389,7 +392,7 @@ class AES:
         P = bytearray()
         for i in range(0, len(C), 16):
             Ci = bytearray(C[i:i+16])
-            Pi = self.InvCipher(Ci, self.Nr, expanded)
+            Pi = self.InvCipher(Ci, self.Nr, expanded) #descifrar
             for j in range(16):
                 Pi[j] ^= prev[j]
             P.extend(Pi)
