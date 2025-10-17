@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import argparse
-from aes import G_F, AES
+from aes_Lab_12 import G_F, AES
 
 def parse_args():
     parser = argparse.ArgumentParser(
