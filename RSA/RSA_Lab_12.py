@@ -2,12 +2,18 @@ import random
 
 def extended_gcd(a, b):
     """
-    Extensión algoritmo Eucliedes
+    Extensión algoritmo Eucliedes iterativo
     """
-    if b == 0:
-        return (a, 1, 0)
-    g, x1, y1 = extended_gcd(b, a % b)
-    return (g, y1, x1 - (a // b) * y1)
+    x0, x1 = 1, 0
+    y0, y1 = 0, 1
+    
+    while b != 0:
+        q = a // b
+        a, b = b, a % b
+        x0, x1 = x1, x0 - q * x1
+        y0, y1 = y1, y0 - q * y1
+
+    return a, x0, y0
 
 def modinv(a, m):
     """
@@ -18,21 +24,28 @@ def modinv(a, m):
         raise Exception("error inverso modular")
     return x % m
 
-def prime(n, k=40):
+# Lista de primos pequeños para cribado rápido
+_small_primes = [
+    3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,
+    67,71,73,79,83,89,97,101,103,107,109,113,127,131,
+    137,139,149,151,157,163,167,173,179,181,191,193,
+    197,199,211,223,227,229,233,239,241,251,257,263,
+    269,271,277,281,283,293
+]
+
+def probably_prime(n):
     """
-    Test de primalidad Miller–Rabin
+    Test de primalidad Miller–Rabin optimitzado
     """
-    if n in (2, 3):
-        return True
     if n < 2:
         return False
 
     # Casos pequeños
-    small_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23]
-    if n in small_primes:
-        return True
-    if any(n % p == 0 for p in small_primes):
-        return False
+    for p in _small_primes:
+        if n == p:
+            return True
+        if n % p == 0:
+            return False
 
     # Descomponer n−1 = 2^r · d
     r = 0
@@ -42,30 +55,45 @@ def prime(n, k=40):
         r += 1
         d //= 2
 
-    for _ in range(k):
-        a = random.randrange(2, n - 2)
+    # Elegimos número de bases según tamaño
+    bits = n.bit_length()
+    if bits >= 8192:
+        num_bases = 4
+    elif bits >= 4096:
+        num_bases = 5
+    else:
+        num_bases = 8  # más pequeño → más tests, más seguridad
+
+    # Usamos bases pseudoaleatorias (distintas cada vez)
+    import secrets
+    for _ in range(num_bases):
+        a = secrets.randbelow(n - 3) + 2  # en [2, n-2]
         x = pow(a, d, n)
         if x == 1 or x == n - 1:
             continue
-        for __ in range(r - 1):
-            x = pow(x, 2, n)
+        for _ in range(r - 1):
+            x = (x * x) % n
             if x == n - 1:
                 break
         else:
             return False
+
     return True
 
 def generate_prime(bits):
     """
-    Generador de primos de "bits" bits
+    Generador de primos de "bits" bits optimizado
     """
+    import secrets
+
     while True:
-        candidate = random.getrandbits(bits)
-        # asegurar tamaño
-        candidate |= (1 << (bits - 1))
+        candidate = secrets.randbits(bits)
+        # asegurar el bit más alto
+        candidate |= (1 << bits-1)
         # asegurar impar
         candidate |= 1
-        if prime(candidate):
+
+        if probably_prime(candidate):
             return candidate
 
 class rsa_key:
@@ -78,7 +106,7 @@ class rsa_key:
 
         # Primos p y q
         bp = bits_modulo // 2
-        bq = bits_modulo - bp   # por si bits_modulo es impar
+        bq = bits_modulo - bp
         p = generate_prime(bp)
         q = generate_prime(bq)
 
