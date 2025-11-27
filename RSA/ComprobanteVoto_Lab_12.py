@@ -138,9 +138,9 @@ f11c1375#1760076542676"""
     
     mensajes = {
         0: "Todo bien",
-        1: "Rebut INCORRECTO, firma correcta",
-        2: "Rebut correcto, firma INCORRECTA",
-        3: "Rebut y firma INCORRECTOS"
+        1: "Rebut incorrecto, firma correcta",
+        2: "Rebut correcto, firma incorrecta",
+        3: "Rebut y firma incorrectos"
     }
     
     print(f"Resultado: {resultado}")
