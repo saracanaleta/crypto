@@ -211,7 +211,7 @@ def main():
     
     # Rutas
     cert_path = r"C:\Users\user\Desktop\Crypto\EC\wikipedia_cert.der"
-    ca_cert_path = r"C:\Users\user\Desktop\Crypto\EC\ca_cert.der"  # Opcional
+    ca_cert_path = r"C:\Users\user\Desktop\Crypto\EC\ca_cert.der"
     output_path = r"C:\Users\user\Desktop\Crypto\EC\resultados_verificacion.txt"
     
     # Cargar certificado
