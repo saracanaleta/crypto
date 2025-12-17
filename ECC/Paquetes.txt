@@ -1,0 +1,5 @@
+- Paquetes 32-33: DNS
+- Paquete 31, 34-36: Three way handshaking con TCP
+- Paquete 37: Client Hello, inicia TLS
+- Paquetes 39:Server Hello
+-Paquetes 41,43 y 45: TLS v1.3 con  Certificate, Certificate Verify, Finished: Intercambio y verificacion de certificados y claves

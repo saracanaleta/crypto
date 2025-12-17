@@ -3,15 +3,6 @@ from sympy.ntheory import isprime
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
-
-# Parámetros de la curva P-256
-P256 = {
-    'p': 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff,
-    'a': -3,
-    'b': 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b,
-    'n': 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
-}
 
 def cargar_certificado(cert_path):
     #Carga el certificado y extrae la clave pública
@@ -20,6 +11,20 @@ def cargar_certificado(cert_path):
     
     public_numbers = cert.public_key().public_numbers()
     return cert, public_numbers.x, public_numbers.y
+
+def cargar_curva(nombre_curva='secp256r1'):
+    #Carga los parametros de la curva eliptica P-256 del certificado
+    cv = Curve.get_curve(nombre_curva)
+    parametros = {
+        'curva': cv,
+        'p': cv.field,
+        'a': cv.a,
+        'b': cv.b,
+        'n': cv.order,
+        'G': cv.generator
+    }
+    return parametros
+
 
 def verificar_orden_primo(n):
     #(a) Verificar que el orden de la curva es primo
@@ -113,18 +118,20 @@ def verificar_firma_ecdsa(cert, ca_cert_path):
 
 
 def main():
-    cert_path = r"C:\Users\user\Desktop\Crypto\EC\wikipedia_cert.der"
-    ca_cert_path = r"C:\Users\user\Desktop\Crypto\EC\ca_cert.der"
+    cert_path = "wikipedia_cert.der"
+    ca_cert_path = "ca_cert.der"
     
     # Cargar certificado
     print(f"Cargando certificado...")
     cert, px, py = cargar_certificado(cert_path)
     print(f"Certificado cargado: {cert.subject.rfc4514_string()}")
     
+    parametros_curva = cargar_curva('secp256r1')
+
     #Apartados
-    verificar_orden_primo(P256['n'])
-    verificar_punto_en_curva(px, py, P256['p'], P256['a'], P256['b'])
-    calcular_orden_punto(px, py, P256['n'])
+    verificar_orden_primo(parametros_curva['n'])
+    verificar_punto_en_curva(px, py, parametros_curva['p'], parametros_curva['a'], parametros_curva['b'])
+    calcular_orden_punto(px, py, parametros_curva['n'])
     verificar_firma_ecdsa(cert, ca_cert_path)
     
 
